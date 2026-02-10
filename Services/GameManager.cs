@@ -1,6 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Text.Json;
-using System.Linq; // CRITICAL: Added for .Any(), .All(), .Where()
+using System.Linq;
 using NeonGrid.Models;
 
 namespace NeonGrid.Services
@@ -25,18 +25,13 @@ namespace NeonGrid.Services
             var player = new Player { ConnectionId = connectionId, Name = name };
             _players[connectionId] = player;
 
-            if (!_stats.ContainsKey(name))
-            {
-                _stats[name] = new UserStat { Name = name };
-                SaveStats();
-            }
+            _stats.GetOrAdd(name, new UserStat { Name = name });
+            SaveStats();
         }
 
         public List<string> RemovePlayer(string connectionId)
         {
             _players.TryRemove(connectionId, out _);
-
-            // End any active games this player was in
             var affectedGames = _games.Values
                 .Where(g => !g.IsGameOver && (g.PlayerX?.ConnectionId == connectionId || g.PlayerO?.ConnectionId == connectionId))
                 .ToList();
@@ -45,7 +40,6 @@ namespace NeonGrid.Services
             {
                 game.IsGameOver = true;
             }
-
             return affectedGames.Select(g => g.GameId).ToList();
         }
 
@@ -86,19 +80,16 @@ namespace NeonGrid.Services
             bool win = CheckWin(game.Board);
             bool draw = !win && game.Board.All(s => !string.IsNullOrEmpty(s));
 
-            if (win)
+            if (win || draw)
             {
                 game.IsGameOver = true;
-                UpdateStats(game.PlayerX.Name, game.PlayerO!.Name, player.Symbol);
-            }
-            else if (draw)
-            {
-                game.IsGameOver = true;
-                UpdateStats(game.PlayerX.Name, game.PlayerO!.Name, "DRAW");
+                UpdateStats(game.PlayerX.Name, game.PlayerO!.Name, win ? player.Symbol : "DRAW");
             }
             else
             {
-                game.CurrentTurnConnectionId = connectionId == game.PlayerX.ConnectionId ? game.PlayerO!.ConnectionId : game.PlayerX.ConnectionId;
+                game.CurrentTurnConnectionId = (connectionId == game.PlayerX.ConnectionId)
+                    ? game.PlayerO!.ConnectionId
+                    : game.PlayerX.ConnectionId;
             }
 
             return (true, win, draw);
@@ -106,19 +97,22 @@ namespace NeonGrid.Services
 
         private bool CheckWin(string[] b)
         {
-            int[][] lines = { new[] { 0, 1, 2 }, new[] { 3, 4, 5 }, new[] { 6, 7, 8 }, new[] { 0, 3, 6 }, new[] { 1, 4, 7 }, new[] { 2, 5, 8 }, new[] { 0, 4, 8 }, new[] { 2, 4, 6 } };
+            int[][] lines = {
+                new[]{0,1,2}, new[]{3,4,5}, new[]{6,7,8}, // Rows
+                new[]{0,3,6}, new[]{1,4,7}, new[]{2,5,8}, // Cols
+                new[]{0,4,8}, new[]{2,4,6}              // Diagonals
+            };
             return lines.Any(l => !string.IsNullOrEmpty(b[l[0]]) && b[l[0]] == b[l[1]] && b[l[1]] == b[l[2]]);
         }
 
         private void UpdateStats(string pX, string pO, string result)
         {
-            // Ensure keys exist (Safety Check)
-            if (!_stats.ContainsKey(pX)) _stats[pX] = new UserStat { Name = pX };
-            if (!_stats.ContainsKey(pO)) _stats[pO] = new UserStat { Name = pO };
+            var statX = _stats.GetOrAdd(pX, new UserStat { Name = pX });
+            var statO = _stats.GetOrAdd(pO, new UserStat { Name = pO });
 
-            if (result == "X") { _stats[pX].Wins++; _stats[pO].Losses++; }
-            else if (result == "O") { _stats[pO].Wins++; _stats[pX].Losses++; }
-            else { _stats[pX].Draws++; _stats[pO].Draws++; }
+            if (result == "X") { statX.Wins++; statO.Losses++; }
+            else if (result == "O") { statO.Wins++; statX.Losses++; }
+            else { statX.Draws++; statO.Draws++; }
             SaveStats();
         }
 
