@@ -28,25 +28,3 @@ FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "NeonGrid.dll"]
-https://play-with-joshi.onrender.com
-# Build Stage
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /app
-
-# Copy everything and restore
-COPY . ./
-RUN dotnet restore
-
-# Build and publish
-RUN dotnet publish -c Release -o out
-
-# Runtime Stage
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
-WORKDIR /app
-COPY --from=build /app/out .
-
-# Render uses the PORT environment variable
-ENV ASPNETCORE_URLS=http://+:10000
-EXPOSE 10000
-
-ENTRYPOINT ["dotnet", "NeonGrid.dll"]
