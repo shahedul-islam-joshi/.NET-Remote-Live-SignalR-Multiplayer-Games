@@ -3,26 +3,27 @@ using NeonGrid.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Add Services
 builder.Services.AddControllersWithViews();
-builder.Services.AddSignalR();
 
-// [FIX] Add CORS Policy to allow the Render frontend to talk to the backend
+// [FIX] Enable Detailed Errors for production debugging
+builder.Services.AddSignalR(options => {
+    options.EnableDetailedErrors = true;
+});
+
+// [FIX] Add permissive CORS for Render deployment
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll",
-        b => b
-        .AllowAnyMethod()
-        .AllowAnyHeader()
-        .SetIsOriginAllowed(origin => true) // Allow any domain (Render, localhost, etc.)
-        .AllowCredentials());               // Required for SignalR
+        b => b.AllowAnyMethod()
+              .AllowAnyHeader()
+              .SetIsOriginAllowed(_ => true)
+              .AllowCredentials());
 });
 
 builder.Services.AddSingleton<GameManager>();
 
 var app = builder.Build();
 
-// 2. Configure Pipeline
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
@@ -30,10 +31,9 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-
 app.UseRouting();
 
-// [FIX] Enable CORS before Authorization and Endpoints
+// [FIX] Use the CORS policy
 app.UseCors("AllowAll");
 
 app.UseAuthorization();

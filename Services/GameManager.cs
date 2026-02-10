@@ -1,8 +1,8 @@
 ﻿using NeonGrid.Models;
-using NeonGrid.Models;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Text.Json;
+using System.IO;
 
 namespace NeonGrid.Services
 {
@@ -12,10 +12,15 @@ namespace NeonGrid.Services
         private readonly ConcurrentDictionary<string, Player> _players = new();
         private ConcurrentDictionary<string, UserStat> _stats = new();
 
-        private readonly string _dbPath = "player_stats.json";
+        // [FIX] Use a safe path for production environments
+        private readonly string _dbPath;
         private readonly object _fileLock = new();
 
-        public GameManager() { LoadStats(); }
+        public GameManager()
+        {
+            _dbPath = Path.Combine(AppContext.BaseDirectory, "player_stats.json");
+            LoadStats();
+        }
 
         public IEnumerable<GameSession> Games => _games.Values;
         public IEnumerable<Player> Players => _players.Values;
@@ -72,11 +77,13 @@ namespace NeonGrid.Services
         {
             if (!_games.TryGetValue(gameId, out var game)) return (false, false, false);
 
-            if (game.IsGameOver || game.CurrentTurnConnectionId != connectionId || !string.IsNullOrEmpty(game.Board[index]))
+            if (game.IsGameOver || game.CurrentTurnConnectionId != connectionId || index < 0 || index > 8 || !string.IsNullOrEmpty(game.Board[index]))
                 return (false, false, false);
 
-            var player = game.PlayerX!.ConnectionId == connectionId ? game.PlayerX : game.PlayerO;
-            game.Board[index] = player!.Symbol;
+            var player = (game.PlayerX?.ConnectionId == connectionId) ? game.PlayerX : game.PlayerO;
+            if (player == null) return (false, false, false);
+
+            game.Board[index] = player.Symbol;
 
             bool win = CheckWin(game.Board);
             bool draw = !win && game.Board.All(s => !string.IsNullOrEmpty(s));
@@ -84,11 +91,11 @@ namespace NeonGrid.Services
             if (win || draw)
             {
                 game.IsGameOver = true;
-                UpdateStats(game.PlayerX.Name, game.PlayerO!.Name, win ? player.Symbol : "DRAW");
+                UpdateStats(game.PlayerX!.Name, game.PlayerO!.Name, win ? player.Symbol : "DRAW");
             }
             else
             {
-                game.CurrentTurnConnectionId = (connectionId == game.PlayerX.ConnectionId)
+                game.CurrentTurnConnectionId = (connectionId == game.PlayerX!.ConnectionId)
                     ? game.PlayerO!.ConnectionId
                     : game.PlayerX.ConnectionId;
             }
@@ -99,9 +106,9 @@ namespace NeonGrid.Services
         private bool CheckWin(string[] b)
         {
             int[][] lines = {
-                new[]{0,1,2}, new[]{3,4,5}, new[]{6,7,8}, // Rows
-                new[]{0,3,6}, new[]{1,4,7}, new[]{2,5,8}, // Cols
-                new[]{0,4,8}, new[]{2,4,6}              // Diagonals
+                new[]{0,1,2}, new[]{3,4,5}, new[]{6,7,8},
+                new[]{0,3,6}, new[]{1,4,7}, new[]{2,5,8},
+                new[]{0,4,8}, new[]{2,4,6}
             };
             return lines.Any(l => !string.IsNullOrEmpty(b[l[0]]) && b[l[0]] == b[l[1]] && b[l[1]] == b[l[2]]);
         }
@@ -117,7 +124,35 @@ namespace NeonGrid.Services
             SaveStats();
         }
 
-        private void SaveStats() { lock (_fileLock) { File.WriteAllText(_dbPath, JsonSerializer.Serialize(_stats, new JsonSerializerOptions { WriteIndented = true })); } }
-        private void LoadStats() { lock (_fileLock) { if (File.Exists(_dbPath)) { try { _stats = JsonSerializer.Deserialize<ConcurrentDictionary<string, UserStat>>(File.ReadAllText(_dbPath)) ?? new(); } catch { _stats = new(); } } } }
+        // [FIX] Try-Catch added to prevent server crashes on restricted filesystems
+        private void SaveStats()
+        {
+            try
+            {
+                lock (_fileLock)
+                {
+                    File.WriteAllText(_dbPath, JsonSerializer.Serialize(_stats, new JsonSerializerOptions { WriteIndented = true }));
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WARNING] Stats file not writable: {ex.Message}");
+            }
+        }
+
+        private void LoadStats()
+        {
+            try
+            {
+                lock (_fileLock)
+                {
+                    if (File.Exists(_dbPath))
+                    {
+                        _stats = JsonSerializer.Deserialize<ConcurrentDictionary<string, UserStat>>(File.ReadAllText(_dbPath)) ?? new();
+                    }
+                }
+            }
+            catch { _stats = new(); }
+        }
     }
 }

@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using NeonGrid.Services;
-using System.Linq; // Added
+using System.Linq;
 
 namespace NeonGrid.Hubs
 {
@@ -13,7 +13,10 @@ namespace NeonGrid.Hubs
         {
             if (string.IsNullOrWhiteSpace(username)) return;
             _gm.AddPlayer(Context.ConnectionId, username);
-            await Clients.Caller.SendAsync("LoginSuccess", _gm.Stats.OrderByDescending(s => s.Wins).Take(10));
+
+            // Send leaderboard safely
+            var lb = _gm.Stats.OrderByDescending(s => s.Wins).Take(10).ToList();
+            await Clients.Caller.SendAsync("LoginSuccess", lb);
             await RefreshLobby();
         }
 
@@ -28,11 +31,11 @@ namespace NeonGrid.Hubs
         public async Task JoinGame(string gameId)
         {
             var game = _gm.JoinGame(gameId, Context.ConnectionId);
-            if (game != null)
+            if (game != null && game.PlayerX != null && game.PlayerO != null)
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, game.GameId);
-                await Clients.Client(game.PlayerX!.ConnectionId).SendAsync("GameStarted", "X", game.PlayerO!.Name);
-                await Clients.Caller.SendAsync("GameStarted", "O", game.PlayerX!.Name);
+                await Clients.Client(game.PlayerX.ConnectionId).SendAsync("GameStarted", "X", game.PlayerO.Name);
+                await Clients.Caller.SendAsync("GameStarted", "O", game.PlayerX.Name);
                 await RefreshLobby();
             }
         }
@@ -44,9 +47,10 @@ namespace NeonGrid.Hubs
             {
                 string status = result.isWin ? "WIN" : (result.isDraw ? "DRAW" : "NEXT");
                 await Clients.Group(gameId).SendAsync("MoveMade", index, status, Context.ConnectionId);
+
                 if (result.isWin || result.isDraw)
                 {
-                    await Clients.All.SendAsync("UpdateLeaderboard", _gm.Stats.OrderByDescending(s => s.Wins).Take(10));
+                    await Clients.All.SendAsync("UpdateLeaderboard", _gm.Stats.OrderByDescending(s => s.Wins).Take(10).ToList());
                     await RefreshLobby();
                 }
             }
@@ -54,8 +58,12 @@ namespace NeonGrid.Hubs
 
         private async Task RefreshLobby()
         {
-            var openGames = _gm.Games.Where(g => g.PlayerO == null && !g.IsGameOver)
-                                     .Select(g => new { g.GameId, HostName = g.PlayerX!.Name });
+            // [FIX] Defensive null check on PlayerX
+            var openGames = _gm.Games
+                .Where(g => g.PlayerO == null && !g.IsGameOver && g.PlayerX != null)
+                .Select(g => new { g.GameId, HostName = g.PlayerX!.Name })
+                .ToList();
+
             await Clients.All.SendAsync("UpdateLobby", openGames);
         }
 
@@ -66,6 +74,7 @@ namespace NeonGrid.Hubs
             {
                 await Clients.Group(gid).SendAsync("OpponentDisconnected");
             }
+            await RefreshLobby();
             await base.OnDisconnectedAsync(exception);
         }
     }
