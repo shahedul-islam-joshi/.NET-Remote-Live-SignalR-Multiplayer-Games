@@ -1,0 +1,369 @@
+﻿@{
+    ViewData["Title"] = "NeonGrid";
+}
+
+<style>
+    /* RESET & BASE */
+    body {
+        background-color: #050505;
+        color: #e0e0e0;
+        font-family: 'Share Tech Mono', monospace;
+        overflow-x: hidden;
+        margin: 0;
+    }
+
+    /* NEON UTILS */
+    .neon-text {
+        color: #fff;
+        text-shadow: 0 0 5px #fff, 0 0 10px #fff, 0 0 20px #00ffcc, 0 0 40px #00ffcc;
+        font-family: 'Orbitron', sans-serif;
+    }
+
+    .glass-panel {
+        background: rgba(20, 20, 20, 0.7);
+        border: 1px solid #333;
+        box-shadow: 0 0 15px rgba(0, 255, 204, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 4px;
+        position: relative;
+    }
+    .glass-panel::before {
+        content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 2px;
+        background: linear-gradient(90deg, transparent, #00ffcc, transparent);
+    }
+
+    /* CONTROLS */
+    .neon-input {
+        background: #0a0a0a;
+        border: 1px solid #333;
+        color: #00ffcc;
+        text-align: center;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 1.5rem;
+    }
+    .neon-input:focus {
+        background: #000;
+        border-color: #00ffcc;
+        box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
+        outline: none;
+        color: #fff;
+    }
+
+    .btn-neon {
+        background: transparent;
+        border: 2px solid #00ffcc;
+        color: #00ffcc;
+        text-transform: uppercase;
+        font-weight: bold;
+        letter-spacing: 2px;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .btn-neon:hover {
+        background: #00ffcc;
+        color: #000;
+        box-shadow: 0 0 30px #00ffcc;
+    }
+
+    /* GRID */
+    .grid-container {
+        display: grid;
+        grid-template-columns: repeat(3, 100px);
+        grid-template-rows: repeat(3, 100px);
+        gap: 10px;
+        margin: 20px auto;
+    }
+    .cell {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid #333;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 3.5rem;
+        cursor: pointer;
+        font-family: 'Orbitron', sans-serif;
+        transition: 0.2s;
+    }
+    .cell:hover {
+        background: rgba(255,255,255,0.1);
+        border-color: #555;
+    }
+
+    .cell.x-move { color: #00ffcc; text-shadow: 0 0 20px #00ffcc; }
+    .cell.o-move { color: #ff0055; text-shadow: 0 0 20px #ff0055; }
+
+    /* LISTS */
+    .game-item {
+        background: rgba(0,0,0,0.5);
+        border-left: 3px solid #333;
+        color: #aaa;
+        cursor: pointer;
+        transition: 0.2s;
+        margin-bottom: 5px;
+    }
+    .game-item:hover {
+        border-left-color: #00ffcc;
+        background: rgba(0, 255, 204, 0.1);
+        color: #fff;
+        padding-left: 20px;
+    }
+
+    .server-badge {
+        font-size: 0.8rem;
+        color: #666;
+        border: 1px solid #333;
+        padding: 2px 8px;
+        border-radius: 10px;
+    }
+</style>
+
+<div class="d-flex flex-column min-vh-100 justify-content-center align-items-center">
+
+    <div id="login-section" class="glass-panel p-5 text-center fade show" style="width: 100%; max-width: 500px;">
+        <h1 class="neon-text mb-4">NEON GRID</h1>
+        <p class="text-muted mb-4">SECURE CONNECTION REQUIRED</p>
+        <input type="text" id="username" class="form-control neon-input mb-4" placeholder="CODENAME" maxlength="12" autocomplete="off">
+        <button onclick="login()" class="btn btn-neon w-100 py-3">INITIALIZE LINK</button>
+    </div>
+
+    <div id="lobby-section" class="container d-none fade">
+        <div class="row g-4">
+            <div class="col-md-8">
+                <div class="glass-panel p-4 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h3 class="neon-text m-0">ACTIVE ZONES</h3>
+                        <button onclick="createGame()" class="btn btn-neon px-4">HOST NEW ZONE</button>
+                    </div>
+                    <div id="games-list" class="list-group">
+                    </div>
+                    <div id="no-games-msg" class="text-center text-muted mt-5 d-none">
+                        -- NO SIGNALS DETECTED --
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="glass-panel p-4 h-100">
+                    <h4 class="text-white mb-3" style="border-bottom: 1px solid #333; padding-bottom: 10px;">TOP AGENTS</h4>
+                    <ul id="leaderboard" class="list-group list-group-flush bg-transparent">
+                    </ul>
+
+                    <div class="mt-4 pt-3 border-top border-secondary">
+                        <small class="text-muted">SYSTEM STATUS:</small>
+                        <div id="server-stats" class="d-flex justify-content-between mt-2 server-badge">
+                            <span>ONLINE</span>
+                            <span id="active-count">0 G</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-section" class="d-none fade text-center">
+        <div class="glass-panel p-5 d-inline-block">
+            <div class="d-flex justify-content-between align-items-center mb-4 text-uppercase" style="width: 320px;">
+                <div class="text-start">
+                    <span id="p1-name" class="d-block fw-bold text-white"></span>
+                    <small class="text-muted">HOST (X)</small>
+                </div>
+                <div class="h2 text-muted fst-italic">VS</div>
+                <div class="text-end">
+                    <span id="p2-name" class="d-block fw-bold text-white"></span>
+                    <small class="text-muted">GUEST (O)</small>
+                </div>
+            </div>
+
+            <div id="status-bar" class="mb-3 text-info border border-secondary py-1">WAITING FOR OPPONENT...</div>
+
+            <div class="grid-container">
+                @for (int i = 0; i < 9; i++)
+                {
+                    <div class="cell" id="cell-@i" onclick="makeMove(@i)"></div>
+                }
+            </div>
+
+            <button onclick="leaveGame()" id="leave-btn" class="btn btn-outline-danger w-100 mt-3 d-none">DISCONNECT</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // --- 1. CONFIGURATION ---
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/gameHub")
+            .withAutomaticReconnect()
+            .build();
+
+        let myGameId = null;
+        let mySymbol = null;
+        let isMyTurn = false;
+
+        // --- 2. SIGNALR LISTENERS ---
+
+        connection.on("LoginSuccess", (leaderboard) => {
+            switchView('lobby-section');
+            updateLeaderboard(leaderboard);
+            startServerPolling();
+        });
+
+        connection.on("UpdateLobby", (games) => {
+            const list = document.getElementById('games-list');
+            const msg = document.getElementById('no-games-msg');
+
+            list.innerHTML = '';
+
+            if (games.length === 0) {
+                msg.classList.remove('d-none');
+            } else {
+                msg.classList.add('d-none');
+                games.forEach(g => {
+                    list.innerHTML += `
+                        <div class="game-item p-3 d-flex justify-content-between align-items-center" onclick="joinGame('${g.gameId}')">
+                            <span class="fw-bold">${g.hostName}</span>
+                            <small class="text-success">READY TO CONNECT</small>
+                        </div>`;
+                });
+            }
+        });
+
+        connection.on("UpdateLeaderboard", (data) => updateLeaderboard(data));
+
+        connection.on("GameCreated", (id) => {
+            myGameId = id;
+            mySymbol = "X";
+            document.getElementById('p1-name').innerText = document.getElementById('username').value;
+            document.getElementById('p2-name').innerText = "???";
+            switchView('game-section');
+            setStatus("AWAITING CHALLENGER...", "#888");
+        });
+
+        connection.on("GameStarted", (symbol, opponentName) => {
+            mySymbol = symbol;
+            const myName = document.getElementById('username').value;
+
+            if (symbol === 'X') {
+                document.getElementById('p2-name').innerText = opponentName; // I am X, opp is O
+                isMyTurn = true;
+                setStatus("YOUR TURN", "#00ffcc");
+            } else {
+                document.getElementById('p1-name').innerText = opponentName; // I am O, opp is X
+                document.getElementById('p2-name').innerText = myName;
+                myGameId = myGameId; // Already set in join
+                isMyTurn = false;
+                setStatus("OPPONENT'S TURN", "#ff0055");
+            }
+        });
+
+        connection.on("MoveMade", (index, result, moverId) => {
+            const cell = document.getElementById(`cell-${index}`);
+            const isMe = moverId === connection.connectionId;
+            const symbol = isMe ? mySymbol : (mySymbol === 'X' ? 'O' : 'X');
+
+            // UI Update
+            cell.innerText = symbol;
+            cell.classList.add(symbol === 'X' ? 'x-move' : 'o-move');
+
+            // Logic
+            if (result === "WIN") {
+                setStatus(isMe ? "VICTORY" : "DEFEAT", isMe ? "#00ffcc" : "#ff0055");
+                endGame();
+            } else if (result === "DRAW") {
+                setStatus("SYSTEM DEADLOCK (DRAW)", "#fff");
+                endGame();
+            } else {
+                // Next turn
+                isMyTurn = !isMe; // If I moved, it's not my turn. If opp moved, it is.
+                setStatus(isMyTurn ? "YOUR TURN" : "OPPONENT'S TURN", isMyTurn ? "#00ffcc" : "#ff0055");
+            }
+        });
+
+        // --- 3. ACTIONS ---
+
+        async function start() {
+            try { await connection.start(); console.log("SignalR Connected."); }
+            catch (err) { console.error(err); setTimeout(start, 5000); }
+        }
+        start();
+
+        function login() {
+            const name = document.getElementById('username').value;
+            if (!name) return alert("CODENAME REQUIRED");
+            connection.invoke("Login", name);
+        }
+
+        function createGame() {
+            connection.invoke("CreateGame");
+        }
+
+        function joinGame(id) {
+            myGameId = id;
+            connection.invoke("JoinGame", id);
+        }
+
+        function makeMove(index) {
+            if (!isMyTurn || !myGameId) return;
+            const cell = document.getElementById(`cell-${index}`);
+            if (cell.innerText !== "") return;
+
+            connection.invoke("MakeMove", myGameId, index);
+        }
+
+        function leaveGame() {
+            location.reload(); // Simple way to reset state
+        }
+
+        // --- 4. HELPERS ---
+
+        function switchView(viewId) {
+            ['login-section', 'lobby-section', 'game-section'].forEach(id => {
+                const el = document.getElementById(id);
+                if (id === viewId) {
+                    el.classList.remove('d-none');
+                    setTimeout(() => el.classList.add('show'), 10); // Fade in
+                } else {
+                    el.classList.remove('show');
+                    el.classList.add('d-none');
+                }
+            });
+        }
+
+        function setStatus(msg, color) {
+            const el = document.getElementById('status-bar');
+            el.innerText = msg;
+            el.style.color = color;
+            el.style.borderColor = color;
+        }
+
+        function endGame() {
+            isMyTurn = false;
+            document.getElementById('leave-btn').classList.remove('d-none');
+        }
+
+        function updateLeaderboard(data) {
+            const el = document.getElementById('leaderboard');
+            el.innerHTML = '';
+            data.forEach(stat => {
+                el.innerHTML += `
+                    <li class="list-group-item bg-transparent text-muted d-flex justify-content-between border-bottom border-dark">
+                        <span>${stat.name}</span>
+                        <span class="text-white fw-bold">${stat.wins} W</span>
+                    </li>`;
+            });
+        }
+
+        // --- 5. POLLING FOR SERVER STATS (API USAGE) ---
+        function startServerPolling() {
+            setInterval(async () => {
+                try {
+                    const response = await fetch('/api/stats/server-info');
+                    const data = await response.json();
+                    document.getElementById('active-count').innerText = data.activeGames + " ZONES";
+                } catch (e) { console.log("Stats poll failed"); }
+            }, 5000);
+        }
+
+    </script>
+}
