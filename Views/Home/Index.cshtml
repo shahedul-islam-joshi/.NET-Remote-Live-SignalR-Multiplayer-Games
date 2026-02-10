@@ -157,9 +157,11 @@
 </div>
 
 @section Scripts {
+    <script src="~/lib/microsoft/signalr/dist/browser/signalr.js"></script>
     <script>
+        // Use window.location.origin to ensure remote clients connect to the server's IP, not localhost
         const connection = new signalR.HubConnectionBuilder()
-            .withUrl("/gameHub")
+            .withUrl(`${window.location.origin}/gameHub`)
             .withAutomaticReconnect()
             .build();
 
@@ -167,7 +169,14 @@
         let mySymbol = null;
         let isMyTurn = false;
 
-        connection.on("LoginSuccess", (lb) => { switchView('lobby-section'); updateLeaderboard(lb); });
+        connection.on("LoginSuccess", (lb) => {
+            switchView('lobby-section');
+            updateLeaderboard(lb);
+        });
+
+        connection.on("UpdateLeaderboard", (lb) => {
+            updateLeaderboard(lb);
+        });
 
         connection.on("UpdateLobby", (games) => {
             const list = document.getElementById('games-list');
@@ -235,14 +244,20 @@
             switchView('game-section');
         }
 
-        function makeMove(index) {
+        async function makeMove(index) {
             if (!isMyTurn || !myGameId) return;
             if (document.getElementById(`cell-${index}`).innerText !== "") return;
 
-            // OPTIMISTIC LOCK: Lock board while waiting for server response
             isMyTurn = false;
             setStatus("TRANSMITTING...", "#888");
-            connection.invoke("MakeMove", myGameId, index);
+
+            try {
+                await connection.invoke("MakeMove", myGameId, index);
+            } catch (err) {
+                console.error(err);
+                isMyTurn = true;
+                setStatus("YOUR TURN", "#00ffcc");
+            }
         }
 
         function switchView(id) {
@@ -255,13 +270,15 @@
 
         function setStatus(m, c) {
             const s = document.getElementById('status-bar');
-            s.innerText = m; s.style.color = c; s.style.borderColor = c;
+            if (s) { s.innerText = m; s.style.color = c; s.style.borderColor = c; }
         }
 
         function updateLeaderboard(data) {
             const el = document.getElementById('leaderboard');
-            el.innerHTML = data.map(s => `<li class="list-group-item bg-transparent text-white d-flex justify-content-between">
-                <span>${s.name}</span><b>${s.wins} W</b></li>`).join('');
+            if (el && data) {
+                el.innerHTML = data.map(s => `<li class="list-group-item bg-transparent text-white d-flex justify-content-between">
+                    <span>${s.name}</span><b>${s.wins} W</b></li>`).join('');
+            }
         }
     </script>
 }

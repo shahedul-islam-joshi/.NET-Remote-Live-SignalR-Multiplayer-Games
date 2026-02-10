@@ -20,11 +20,17 @@
   "5": {
     "Name": "5",
     "Wins": 0,
-    "Losses": 1,
+    "Losses": 2,
     "Draws": 0
   },
   "8": {
     "Name": "8",
+    "Wins": 1,
+    "Losses": 0,
+    "Draws": 0
+  },
+  "7": {
+    "Name": "7",
     "Wins": 1,
     "Losses": 0,
     "Draws": 0
