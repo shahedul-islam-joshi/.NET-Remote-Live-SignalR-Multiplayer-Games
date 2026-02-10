@@ -1,36 +1,30 @@
 ﻿using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Linq; // CRITICAL: Added for .Any(), .All(), .Where()
 using NeonGrid.Models;
 
 namespace NeonGrid.Services
 {
     public class GameManager
     {
-        // Thread-safe collections
         private readonly ConcurrentDictionary<string, GameSession> _games = new();
-        private readonly ConcurrentDictionary<string, Player> _players = new(); // Key: ConnectionId
-        private ConcurrentDictionary<string, UserStat> _stats = new(); // Key: Username
+        private readonly ConcurrentDictionary<string, Player> _players = new();
+        private ConcurrentDictionary<string, UserStat> _stats = new();
 
         private readonly string _dbPath = "player_stats.json";
         private readonly object _fileLock = new();
 
-        public GameManager()
-        {
-            LoadStats();
-        }
+        public GameManager() { LoadStats(); }
 
-        // --- Exposure for API ---
         public IEnumerable<GameSession> Games => _games.Values;
         public IEnumerable<Player> Players => _players.Values;
         public IEnumerable<UserStat> Stats => _stats.Values;
 
-        // --- Player Logic ---
         public void AddPlayer(string connectionId, string name)
         {
             var player = new Player { ConnectionId = connectionId, Name = name };
             _players[connectionId] = player;
 
-            // Initialize stats if new user
             if (!_stats.ContainsKey(name))
             {
                 _stats[name] = new UserStat { Name = name };
@@ -38,28 +32,30 @@ namespace NeonGrid.Services
             }
         }
 
-        public void RemovePlayer(string connectionId)
+        public List<string> RemovePlayer(string connectionId)
         {
             _players.TryRemove(connectionId, out _);
-            // Optional: Auto-forfeit games if a player disconnects (omitted for simplicity)
+
+            // End any active games this player was in
+            var affectedGames = _games.Values
+                .Where(g => !g.IsGameOver && (g.PlayerX?.ConnectionId == connectionId || g.PlayerO?.ConnectionId == connectionId))
+                .ToList();
+
+            foreach (var game in affectedGames)
+            {
+                game.IsGameOver = true;
+            }
+
+            return affectedGames.Select(g => g.GameId).ToList();
         }
 
-        public Player? GetPlayer(string connectionId) =>
-            _players.TryGetValue(connectionId, out var p) ? p : null;
+        public Player? GetPlayer(string connectionId) => _players.GetValueOrDefault(connectionId);
 
-        // --- Game Logic ---
         public GameSession CreateGame(string hostConnectionId)
         {
-            var host = GetPlayer(hostConnectionId);
-            if (host == null) throw new Exception("Player not found");
-
+            var host = GetPlayer(hostConnectionId) ?? throw new Exception("Player not found");
             host.Symbol = "X";
-            var game = new GameSession
-            {
-                PlayerX = host,
-                CurrentTurnConnectionId = hostConnectionId
-            };
-
+            var game = new GameSession { PlayerX = host, CurrentTurnConnectionId = hostConnectionId };
             _games[game.GameId] = game;
             return game;
         }
@@ -70,7 +66,6 @@ namespace NeonGrid.Services
             {
                 var joiner = GetPlayer(joinerConnectionId);
                 if (joiner == null) return null;
-
                 joiner.Symbol = "O";
                 game.PlayerO = joiner;
                 return game;
@@ -82,13 +77,8 @@ namespace NeonGrid.Services
         {
             if (!_games.TryGetValue(gameId, out var game)) return (false, false, false);
 
-            // Validation
-            if (game.IsGameOver ||
-                game.CurrentTurnConnectionId != connectionId ||
-                !string.IsNullOrEmpty(game.Board[index]))
-            {
+            if (game.IsGameOver || game.CurrentTurnConnectionId != connectionId || !string.IsNullOrEmpty(game.Board[index]))
                 return (false, false, false);
-            }
 
             var player = game.PlayerX!.ConnectionId == connectionId ? game.PlayerX : game.PlayerO;
             game.Board[index] = player!.Symbol;
@@ -99,8 +89,7 @@ namespace NeonGrid.Services
             if (win)
             {
                 game.IsGameOver = true;
-                game.WinnerId = connectionId;
-                UpdateStats(game.PlayerX.Name, game.PlayerO!.Name, connectionId == game.PlayerX.ConnectionId ? "X" : "O");
+                UpdateStats(game.PlayerX.Name, game.PlayerO!.Name, player.Symbol);
             }
             else if (draw)
             {
@@ -109,17 +98,7 @@ namespace NeonGrid.Services
             }
             else
             {
-                // Switch turn
-                game.CurrentTurnConnectionId = connectionId == game.PlayerX.ConnectionId
-                    ? game.PlayerO!.ConnectionId
-                    : game.PlayerX.ConnectionId;
-            }
-
-            // Cleanup if game over (optional, keeps memory low)
-            if (game.IsGameOver)
-            {
-                // We keep it briefly for display, client should handle "Left Game" to remove it fully
-                // For now, we leave it in memory so users can see the result
+                game.CurrentTurnConnectionId = connectionId == game.PlayerX.ConnectionId ? game.PlayerO!.ConnectionId : game.PlayerX.ConnectionId;
             }
 
             return (true, win, draw);
@@ -127,62 +106,23 @@ namespace NeonGrid.Services
 
         private bool CheckWin(string[] b)
         {
-            int[][] lines = {
-                new[]{0,1,2}, new[]{3,4,5}, new[]{6,7,8},
-                new[]{0,3,6}, new[]{1,4,7}, new[]{2,5,8},
-                new[]{0,4,8}, new[]{2,4,6}
-            };
+            int[][] lines = { new[] { 0, 1, 2 }, new[] { 3, 4, 5 }, new[] { 6, 7, 8 }, new[] { 0, 3, 6 }, new[] { 1, 4, 7 }, new[] { 2, 5, 8 }, new[] { 0, 4, 8 }, new[] { 2, 4, 6 } };
             return lines.Any(l => !string.IsNullOrEmpty(b[l[0]]) && b[l[0]] == b[l[1]] && b[l[1]] == b[l[2]]);
         }
 
-        // --- Persistence ---
         private void UpdateStats(string pX, string pO, string result)
         {
-            if (result == "X")
-            {
-                _stats[pX].Wins++;
-                _stats[pO].Losses++;
-            }
-            else if (result == "O")
-            {
-                _stats[pO].Wins++;
-                _stats[pX].Losses++;
-            }
-            else
-            {
-                _stats[pX].Draws++;
-                _stats[pO].Draws++;
-            }
+            // Ensure keys exist (Safety Check)
+            if (!_stats.ContainsKey(pX)) _stats[pX] = new UserStat { Name = pX };
+            if (!_stats.ContainsKey(pO)) _stats[pO] = new UserStat { Name = pO };
+
+            if (result == "X") { _stats[pX].Wins++; _stats[pO].Losses++; }
+            else if (result == "O") { _stats[pO].Wins++; _stats[pX].Losses++; }
+            else { _stats[pX].Draws++; _stats[pO].Draws++; }
             SaveStats();
         }
 
-        private void SaveStats()
-        {
-            lock (_fileLock)
-            {
-                var json = JsonSerializer.Serialize(_stats, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(_dbPath, json);
-            }
-        }
-
-        private void LoadStats()
-        {
-            lock (_fileLock)
-            {
-                if (File.Exists(_dbPath))
-                {
-                    try
-                    {
-                        var json = File.ReadAllText(_dbPath);
-                        var data = JsonSerializer.Deserialize<ConcurrentDictionary<string, UserStat>>(json);
-                        if (data != null) _stats = data;
-                    }
-                    catch
-                    {
-                        _stats = new(); // Fallback if file corrupt
-                    }
-                }
-            }
-        }
+        private void SaveStats() { lock (_fileLock) { File.WriteAllText(_dbPath, JsonSerializer.Serialize(_stats, new JsonSerializerOptions { WriteIndented = true })); } }
+        private void LoadStats() { lock (_fileLock) { if (File.Exists(_dbPath)) { try { _stats = JsonSerializer.Deserialize<ConcurrentDictionary<string, UserStat>>(File.ReadAllText(_dbPath)) ?? new(); } catch { _stats = new(); } } } }
     }
 }
