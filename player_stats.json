@@ -17,6 +17,12 @@
     "Losses": 1,
     "Draws": 0
   },
+  "5": {
+    "Name": "5",
+    "Wins": 0,
+    "Losses": 1,
+    "Draws": 0
+  },
   "8": {
     "Name": "8",
     "Wins": 1,
@@ -25,7 +31,7 @@
   },
   "9": {
     "Name": "9",
-    "Wins": 0,
+    "Wins": 1,
     "Losses": 1,
     "Draws": 0
   }
