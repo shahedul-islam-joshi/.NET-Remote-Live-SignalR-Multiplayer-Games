@@ -1,3 +1,24 @@
+<div align="center">
+
+# 🎮 NeonGrid
+**High-Concurrency Real-Time Multiplayer Platform**
+
+[![Live Demo](https://img.shields.io/badge/Status-Live--Production-00ffcc?style=for-the-badge&logo=render&logoColor=black)](https://play-with-joshi.onrender.com)
+[![Platform](https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)](https://play-with-joshi.onrender.com)
+[![Engine](https://img.shields.io/badge/SignalR-Real--Time-orange?style=for-the-badge&logo=signalr&logoColor=white)](https://play-with-joshi.onrender.com)
+[![License](https://img.shields.io/badge/License-MIT-white?style=for-the-badge)](https://github.com/shahedul-islam-joshi/.NET-Remote-Live-SignalR-Multiplayer-Games/blob/main/LICENSE)
+
+</div>
+
+---
+##  Live Deployment
+
+The application is live and public. You can jump into a grid and start playing immediately without any registration.
+
+> [!NOTE]
+> **Performance Tip:** This project is hosted on a **Render Free Tier**. If the link takes about 30 seconds to load initially, the server is simply "waking up" from its sleep cycle. Once active, the SignalR connection provides sub-millisecond real-time responses. ⚡
+
+**Live Link:** [play-with-joshi.onrender.com](https://play-with-joshi.onrender.com)
 # NeonGrid: Real-Time Multiplayer Tic-Tac-Toe
 
 NeonGrid is a high-performance, real-time multiplayer gaming platform built with **ASP.NET Core** and **SignalR**. Designed for zero-friction gameplay, it allows users to jump into global sessions using nothing but a "codename"—no registration, no passwords, just instant competition.
