@@ -7,7 +7,17 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
 builder.Services.AddSignalR();
 
-// CRITICAL: Register GameManager as Singleton so state persists across requests
+// [FIX] Add CORS Policy to allow the Render frontend to talk to the backend
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll",
+        b => b
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+        .SetIsOriginAllowed(origin => true) // Allow any domain (Render, localhost, etc.)
+        .AllowCredentials());               // Required for SignalR
+});
+
 builder.Services.AddSingleton<GameManager>();
 
 var app = builder.Build();
@@ -23,13 +33,15 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+// [FIX] Enable CORS before Authorization and Endpoints
+app.UseCors("AllowAll");
+
 app.UseAuthorization();
 
-// 3. Map Endpoints
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
-app.MapHub<GameHub>("/gameHub"); // The WebSocket endpoint
+app.MapHub<GameHub>("/gameHub");
 
 app.Run();

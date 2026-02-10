@@ -53,6 +53,14 @@
             box-shadow: 0 0 30px #00ffcc;
         }
 
+        /* Disabled state for button */
+        .btn-neon:disabled {
+            border-color: #555;
+            color: #555;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
     .grid-container {
         display: grid;
         grid-template-columns: repeat(3, 100px);
@@ -114,7 +122,8 @@
     <div id="login-section" class="glass-panel p-5 text-center fade show" style="width: 100%; max-width: 500px;">
         <h1 class="neon-text mb-4">NEON GRID</h1>
         <input type="text" id="username" class="form-control neon-input mb-4" placeholder="CODENAME" maxlength="12">
-        <button onclick="login()" class="btn btn-neon w-100 py-3">INITIALIZE</button>
+        <button id="btn-init" onclick="login()" class="btn btn-neon w-100 py-3" disabled>CONNECTING...</button>
+        <div id="conn-status" class="mt-2 text-muted small">Establish Link...</div>
     </div>
 
     <div id="lobby-section" class="container d-none fade">
@@ -158,9 +167,11 @@
 
 @section Scripts {
     <script>
+        // [FIX] Configure logging to see errors in browser console (F12)
         const connection = new signalR.HubConnectionBuilder()
             .withUrl("/gameHub")
             .withAutomaticReconnect()
+            .configureLogging(signalR.LogLevel.Information)
             .build();
 
         let myGameId = null;
@@ -219,30 +230,67 @@
             document.getElementById('leave-btn').classList.remove('d-none');
         });
 
-        async function start() { try { await connection.start(); } catch (err) { setTimeout(start, 5000); } }
-        start();
+        // [FIX] Improved Start Logic with UI feedback
+        async function start() {
+            const btn = document.getElementById('btn-init');
+            const status = document.getElementById('conn-status');
 
-        function login() {
-            const n = document.getElementById('username').value;
-            if(n) connection.invoke("Login", n);
+            try {
+                await connection.start();
+                console.log("SignalR Connected.");
+                btn.disabled = false;
+                btn.innerText = "INITIALIZE";
+                status.innerText = "System Online";
+                status.style.color = "#00ffcc";
+            } catch (err) {
+                console.error(err);
+                status.innerText = "Connection Failed. Retrying...";
+                status.style.color = "red";
+                setTimeout(start, 5000);
+            }
         }
 
-        function createGame() { connection.invoke("CreateGame"); }
+        start();
 
-        function joinGame(id) {
+        // [FIX] Async Login with Error Handling
+        async function login() {
+            const n = document.getElementById('username').value;
+            if (!n) { alert("ENTER CODENAME"); return; }
+
+            try {
+                await connection.invoke("Login", n);
+            } catch (err) {
+                console.error(err);
+                alert("Login failed: " + err.toString());
+            }
+        }
+
+        async function createGame() {
+            try { await connection.invoke("CreateGame"); } catch(e) { console.error(e); }
+        }
+
+        async function joinGame(id) {
             myGameId = id;
-            connection.invoke("JoinGame", id);
+            try { await connection.invoke("JoinGame", id); } catch(e) { console.error(e); }
             switchView('game-section');
         }
 
-        function makeMove(index) {
+        async function makeMove(index) {
             if (!isMyTurn || !myGameId) return;
             if (document.getElementById(`cell-${index}`).innerText !== "") return;
 
-            // OPTIMISTIC LOCK: Lock board while waiting for server response
+            // OPTIMISTIC LOCK
+            const oldStatus = document.getElementById('status-bar').innerText;
             isMyTurn = false;
             setStatus("TRANSMITTING...", "#888");
-            connection.invoke("MakeMove", myGameId, index);
+
+            try {
+                await connection.invoke("MakeMove", myGameId, index);
+            } catch (err) {
+                console.error("Move failed", err);
+                isMyTurn = true; // Revert turn if failed
+                setStatus(oldStatus, "#00ffcc");
+            }
         }
 
         function switchView(id) {
